@@ -6,6 +6,11 @@ const WebSocket = require('ws');
 const app = express();
 app.use(cors());
 app.use(express.json());
+const path = require('path');
+
+// Serve frontend static files
+app.use(express.static(path.join(__dirname, 'frontend')));
+
 
 const PORT = 3000;
 const sessions = {}; // Store sessions in memory (for dev)
@@ -91,6 +96,11 @@ app.get('/api/session-status', (req, res) => {
     const session = sessions[sessionId];
     if (!session) return res.status(400).json({ message: 'Invalid session' });
     res.json(session);
+});
+
+// Optional: redirect /frontend/index.html requests explicitly
+app.get('/frontend/index.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
 });
 
 //debug app
