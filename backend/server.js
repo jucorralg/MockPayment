@@ -2,37 +2,42 @@ const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const WebSocket = require('ws');
+const path = require('path');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-const path = require('path');
-
-// Serve frontend static files
-app.use(express.static(path.join(__dirname, 'frontend')));
-
 
 const PORT = 3000;
-const sessions = {}; // Store sessions in memory (for dev)
+const sessions = {}; // In-memory session storage
 
-function generateConfirmationCode() {
-    return 'NP-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-}
+// --- Serve frontend ---
+app.use(express.static(path.join(__dirname, 'frontend')));
 
-// --- WebSocket Server ---
+// Optional root redirect to index.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
+});
+
+// --- WebSocket server (optional) ---
 const wss = new WebSocket.Server({ port: 3001 });
-const agentSockets = {}; // map agentId -> socket
+const agentSockets = {};
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws) => {
     ws.on('message', (msg) => {
         const data = JSON.parse(msg);
         if (data.agentId) {
-            agentSockets[data.agentId] = ws; // register agent
+            agentSockets[data.agentId] = ws;
         }
     });
 });
 
-// --- 1) Create payment session ---
+// --- Helper ---
+function generateConfirmationCode() {
+    return 'NP-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+}
+
+// --- Create payment session ---
 app.post('/api/create-session', (req, res) => {
     const { amount, customerEmail, agentId } = req.body;
     if (!amount || !customerEmail || !agentId) {
@@ -40,7 +45,7 @@ app.post('/api/create-session', (req, res) => {
     }
 
     const sessionId = uuidv4();
-    const paymentUrl = `http://localhost:3000/frontend/index.html?sessionId=${sessionId}`;
+    const paymentUrl = `http://localhost:3000/index.html?sessionId=${sessionId}&amount=${amount}`;
 
     sessions[sessionId] = {
         agentId,
@@ -52,12 +57,11 @@ app.post('/api/create-session', (req, res) => {
     res.json({ sessionId, paymentUrl });
 });
 
-// --- 2) Customer submits payment ---
+// --- Process payment ---
 app.post('/api/pay', (req, res) => {
     const { sessionId, cardNumber, cardName, expiry, cvv } = req.body;
     const session = sessions[sessionId];
     if (!session) return res.status(400).json({ message: 'Invalid session' });
-
     if (!cardNumber || !cardName || !expiry || !cvv) {
         return res.status(400).json({ message: 'Missing card info' });
     }
@@ -65,12 +69,11 @@ app.post('/api/pay', (req, res) => {
     const last4 = cardNumber.slice(-4);
     const confirmationCode = generateConfirmationCode();
 
-    // Update session
     session.status = 'completed';
     session.last4 = last4;
     session.confirmationCode = confirmationCode;
 
-    // Notify agent if WebSocket connected
+    // Notify agent via WebSocket
     const ws = agentSockets[session.agentId];
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -90,7 +93,7 @@ app.post('/api/pay', (req, res) => {
     });
 });
 
-// --- 3) Optional polling endpoint ---
+// --- Session status (polling) ---
 app.get('/api/session-status', (req, res) => {
     const { sessionId } = req.query;
     const session = sessions[sessionId];
@@ -98,19 +101,11 @@ app.get('/api/session-status', (req, res) => {
     res.json(session);
 });
 
-// Optional: redirect /frontend/index.html requests explicitly
-app.get('/frontend/index.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
-});
-
-//debug app
-app.get('/', (req, res) => {
-    res.send('Backend is running!');
-});
+// --- Debug ---
+app.get('/health', (req, res) => res.send('Backend is running'));
 
 app.listen(PORT, () => {
     console.log(`Mock Payment API running on port ${PORT}`);
     console.log('WebSocket server running on port 3001');
 });
-
 
