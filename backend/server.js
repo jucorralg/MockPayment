@@ -79,7 +79,7 @@ function generateConfirmationCode() {
 // ============================
 // Create payment session
 // ============================
-app.post('/api/create-session', (req, res) => {
+app.post('/api/create-session', async (req, res) => {
   const { amount, customerEmail, agentId } = req.body;
 
   if (!amount || !customerEmail || !agentId) {
@@ -106,7 +106,7 @@ app.post('/api/create-session', (req, res) => {
 // ============================
 // Process payment
 // ============================
-app.post('/api/pay', (req, res) => {
+app.post('/api/pay', async (req, res) => {
   const { sessionId, cardNumber, cardName, expiry, cvv } = req.body;
 
   let session = await redisClient.get(sessionId);
